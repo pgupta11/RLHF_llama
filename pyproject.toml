@@ -1,0 +1,54 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "RLHF_llama"
+version = "0.1.0"
+description = "RLHF"
+authors = ["Prachi Gupta <prachigta@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/yourusername/my-project"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.11"
+requests = ">=2.28.0"
+matplotlib = "^3.10.1"
+transformers = "^4.49.0"
+scikit-learn = "^1.6.1"
+tqdm = "^4.67.1"
+pandas = "^2.2.3"
+torch = "^2.6.0"
+torchvision = "^0.21.0"
+torchaudio = "^2.6.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.0.0"
+pytest-cov = ">=3.0.0"
+black = ">=22.0.0"
+isort = ">=5.10.0"
+mypy = ">=0.960"
+
+
+
+[tool.black]
+line-length = 88
+target-version = ["py38"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "--cov=my_project"
