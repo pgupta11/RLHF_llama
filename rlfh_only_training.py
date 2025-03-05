@@ -480,6 +480,5 @@ def main():
     print(f"✅ RLHF training completed! Model saved to {args.output_dir}")
     logger.info(f"✅ RLHF training completed! Model saved to {args.output_dir}")
 
-# Ensure the script runs when executed
 if __name__ == "__main__":
     main()
