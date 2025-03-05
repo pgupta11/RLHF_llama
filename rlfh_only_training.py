@@ -15,6 +15,7 @@ import logging
 from datetime import datetime
 import matplotlib.pyplot as plt
 from peft import LoraConfig, get_peft_model
+from transformers import GenerationConfig
 
 # Set up logging
 logging.basicConfig(
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 def load_feedback_data(feedback_csv, reward_model_path=None):
     """Load feedback data and optionally verify reward model predictions"""
     df = pd.read_csv(feedback_csv)
-    
+    print(df)
     # Filter for clear preferences only
     df = df[df["preferred_response"].isin(["A", "B"])]
     
@@ -105,6 +106,8 @@ def validate_reward_model(model_path, feedback_data, sample_size=50):
 def prepare_rlhf_data(feedback_data, tokenizer, max_length=512):
     """Prepare data for RLHF fine-tuning"""
     # Create a dataset focused on the preferred responses
+    print(f"Loaded {len(feedback_data)} feedback examples for RLHF training.")
+    logger.info(f"Loaded {len(feedback_data)} feedback examples.")
     rlhf_data = []
     
     for item in feedback_data:
@@ -235,17 +238,12 @@ def train_with_rlhf(
     
     # Configure PPO training
     ppo_config = PPOConfig(
-        model_name=base_model_name,
-        learning_rate=learning_rate,
         batch_size=batch_size,
         mini_batch_size=mini_batch_size,
-        gradient_accumulation_steps=1,
-        optimize_cuda_cache=True,
-        early_stopping=False,
-        target_kl=target_kl,
-        ppo_epochs=ppo_epochs,
-        max_grad_norm=1.0,
-        seed=42
+        max_new_tokens=256,
+        temperature=0.7,
+        do_sample=True,
+        stop_token_id=ppo_tokenizer.pad_token_id
     )
     
     # Initialize wandb if requested
@@ -264,13 +262,15 @@ def train_with_rlhf(
             }
         )
     
-    # Create PPO trainer
+    # Create PPO trainer with explicit generation kwargs
     trainer = PPOTrainer(
         config=ppo_config,
         model=ppo_model,
-        tokenizer=ppo_tokenizer,
+        processing_class=ppo_tokenizer,
         dataset=rlhf_dataset,
-        data_collator=transformers.DataCollatorForLanguageModeling(ppo_tokenizer, mlm=False)
+        reward_model=reward_model_path,
+        ref_model=None,
+        data_collator=transformers.DataCollatorForLanguageModeling(ppo_tokenizer, mlm=False),
     )
     
     device = trainer.accelerator.device
@@ -431,4 +431,55 @@ def train_with_rlhf(
         json.dump(all_metrics, f, indent=2)
     
     # Save demo responses
-    demo_file = os.path.join(output
+    demo_file = os.path.join(output_dir, "demo_responses.json")
+    with open(demo_file, "w") as f:
+        json.dump(demo_responses, f, indent=2)
+
+    logger.info(f"Training complete. Model saved to {output_dir}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Run RLHF training")
+    parser.add_argument("--feedback_csv", type=str, required=True, help="Path to feedback CSV file")
+    parser.add_argument("--reward_model_path", type=str, required=True, help="Path to trained reward model")
+    parser.add_argument("--base_model_name", type=str, required=True, help="Base model for fine-tuning")
+    parser.add_argument("--output_dir", type=str, default="rlhf_model", help="Directory to save trained model")
+    
+    args = parser.parse_args()
+
+    print(f"🔥 Script started with arguments: {args}")
+    logger.info(f"🔥 Script started with arguments: {args}")
+
+    # Load feedback data
+    feedback_data = load_feedback_data(args.feedback_csv, args.reward_model_path)
+    print(f"📊 Loaded {len(feedback_data)} feedback examples.")
+    logger.info(f"📊 Loaded {len(feedback_data)} feedback examples.")
+
+    # Initialize tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(args.base_model_name)
+    
+
+    # Ensure the tokenizer has a padding token
+    if tokenizer.pad_token is None:
+        if tokenizer.eos_token:
+            tokenizer.pad_token = tokenizer.eos_token
+        else:
+            tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    # Prepare dataset
+    rlhf_dataset = prepare_rlhf_data(feedback_data, tokenizer)
+    print(f"📂 RLHF dataset prepared with {len(rlhf_dataset)} examples.")
+    logger.info(f"📂 RLHF dataset prepared with {len(rlhf_dataset)} examples.")
+
+    # Train the model using RLHF
+    train_with_rlhf(
+        base_model_name=args.base_model_name,
+        reward_model_path=args.reward_model_path,
+        rlhf_dataset=rlhf_dataset,
+        output_dir=args.output_dir
+    )
+
+    print(f"✅ RLHF training completed! Model saved to {args.output_dir}")
+    logger.info(f"✅ RLHF training completed! Model saved to {args.output_dir}")
+
+# Ensure the script runs when executed
+if __name__ == "__main__":
+    main()
